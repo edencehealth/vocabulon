@@ -32,7 +32,7 @@ Usage: vocabulon [-h|--help] [options]
 Calling forth VOCABULON's awesome power goes like this (assuming you have a directory called `vocab` with some CSV files in it):
 
 ```sh
-docker run --rm --volume "$(pwd)/vocab" edence/vocabulon:1 \
+docker run --rm --volume "$(pwd)/vocab:/vocab:ro" edence/vocabulon:1 \
   --pghost db.example.com \
   --pguser calculon \
   --pgpassword all-my-circuits2 \
