@@ -14,8 +14,9 @@ configuration is by envvar or command-line arguments
 
 Usage: vocabulon [-h|--help] [options]
 
--h / --help   show this message
--d / --debug  print additional debugging messages
+-h / --help     show this message
+-v / --version  print the version number and exit
+-d / --debug    print additional debugging messages
 
 --pghost PGHOST              database server address to connect to (default: 127.0.0.1)
 --pgport PGPORT              port number to connect to the database server on (default: 5432)
@@ -24,14 +25,14 @@ Usage: vocabulon [-h|--help] [options]
 --pgdatabase PGDATABASE      database name to access on the database server (default: user)
 --schema SCHEMA              schema to place the vocab tables in (default: vocab)
 --schema-owner SCHEMA_OWNER  optional owner to apply to created schemas and tables (default: )
---vocab-dir VOCAB_DIR        directory where vocab CSV files can be found (default: ./vocab)
+--vocab-dir VOCAB_DIR        directory where vocab CSV files can be found (default: /vocab)
 --scratch-dir SCRATCH_DIR    directory where scratch files can be written (default: /work)
 ```
 
 Calling forth VOCABULON's awesome power goes like this (assuming you have a directory called `vocab` with some CSV files in it):
 
 ```sh
-docker run --rm --volume "$(pwd)/vocab" edence/vocabulon:v1 \
+docker run --rm --volume "$(pwd)/vocab:/vocab:ro" edence/vocabulon:1 \
   --pghost db.example.com \
   --pguser calculon \
   --pgpassword all-my-circuits2 \

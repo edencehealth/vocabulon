@@ -1,4 +1,6 @@
 #!/bin/sh
+# shellcheck disable=SC3049
+# bug report open: https://github.com/koalaman/shellcheck/issues/2715
 set -eu
 SELF=$(basename "$0" ".sh")
 VERSION="${GITHUB_TAG:-}/${COMMIT_SHA:-}"
@@ -18,7 +20,7 @@ export \
   PGDATABASE="${PGDATABASE:-$PGUSER}" \
 ;
 
-VOCAB_DIR="${VOCAB_DIR:-./vocab}" # no trailing slash
+VOCAB_DIR="${VOCAB_DIR:-/vocab}" # no trailing slash
 SCRATCH_DIR="${SCRATCH_DIR:-$(pwd)}" # override this if CWD isn't writeable (for tmp files)
 IMPORT_DIR=$(dirname "$0")
 SQL_DIR="${IMPORT_DIR}/sql"
@@ -56,6 +58,11 @@ log() {
   printf '%s %s %s\n' "$(date '+%FT%T%z')" "$SELF" "$*" >&2
 }
 
+die() {
+  log "FATAL:" "$@"
+  exit 1
+}
+
 psql_cmd() {
   psql -v ON_ERROR_STOP=1 -q -At "$@"
 }
@@ -70,7 +77,7 @@ apply_txn() {
   # runs the given sql temp file then removes it
   txn_file="${1:?argument required}"
   echo "COMMIT;" >>"$txn"
-  psql_cmd -f "$txn_file"
+  psql_cmd -f "$txn_file" || kill -s SIGUSR2 $$
   rm -- "$txn_file"
 }
 
@@ -171,24 +178,30 @@ main() {
   fi
   envsubst <"${SQL_DIR}/get_empty_tables.sql" >>"$txn"
 
-  log "transaction built, sending to server"
-  i=0; trap 'i=$(( i + 1 ))' USR1  # subshell ipc
-  apply_txn "$txn" | while read -r table; do
-    # the transaction returns a list of empty tables that need vocab data
-    capital_table=$(printf '%s' "$table" | tr '[:lower:]' '[:upper:]')
-    src="${VOCAB_DIR}/${table##*.}.csv" # table minus the "vocab."
-    if ! [ -f "$src" ]; then
-      src="${VOCAB_DIR}/${capital_table##*.}.csv" # TABLE minus the "vocab."
-    fi
-    log "loading local ${src} into ${table}"
-    psql_cmd -c "\copy ${table} FROM '${src}' WITH DELIMITER E'\t' CSV HEADER QUOTE E'\b'"
-    kill -s SIGUSR1 $$  # increment i in the parent
-  done
+  # prep some subshell IPC
+  trap -- 'die "psql exited $?"' USR2
+  load_count=0; trap -- 'load_count=$(( load_count + 1 )); wait ||:' USR1
 
-  if [ "$i" = "0" ]; then
-    log "no tables appeared to be empty"
+  log "transaction built, sending to server"
+  (
+    apply_txn "$txn" | while read -r table; do
+      # the transaction returns a list of empty tables that need vocab data
+      capital_table=$(printf '%s' "$table" | tr '[:lower:]' '[:upper:]')
+      src="${VOCAB_DIR}/${table##*.}.csv" # table minus the "vocab."
+      if ! [ -f "$src" ]; then
+        src="${VOCAB_DIR}/${capital_table##*.}.csv" # TABLE minus the "vocab."
+      fi
+      log "loading local ${src} into ${table}"
+      psql_cmd -c "\copy ${table} FROM '${src}' WITH DELIMITER E'\t' CSV HEADER QUOTE E'\b'"
+      kill -s SIGUSR1 $$  # increment i in the parent
+    done
+  ) &
+  wait || :
+
+  if [ "$load_count" = "0" ]; then
+    log "no vocab tables are empty"
   else
-    log "populated ${i} table(s)"
+    log "populated ${load_count} table(s)"
   fi
 
   log "done"
