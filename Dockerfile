@@ -28,8 +28,8 @@ RUN set -eux; \
 USER nonroot
 WORKDIR /work
 
-ARG GIT_TAG="dev"
-ARG GIT_SHA="dev"
-ENV GIT_TAG="${GIT_TAG}" GIT_SHA="${GIT_SHA}"
+ARG GITHUB_TAG="dev"
+ARG COMMIT_SHA="dev"
+ENV GITHUB_TAG="${GITHUB_TAG}" COMMIT_SHA="${COMMIT_SHA}"
 
 ENTRYPOINT [ "/app/vocabulon.sh" ]

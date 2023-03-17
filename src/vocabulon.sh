@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 SELF=$(basename "$0" ".sh")
-VERSION="${GIT_TAG:-}/${GIT_SHA:-}"
+VERSION="${GITHUB_TAG:-}/${COMMIT_SHA:-}"
 
 # https://www.postgresql.org/docs/current/libpq-envars.html
 export \
@@ -175,7 +175,11 @@ main() {
   i=0; trap 'i=$(( i + 1 ))' USR1  # subshell ipc
   apply_txn "$txn" | while read -r table; do
     # the transaction returns a list of empty tables that need vocab data
+    capital_table=$(printf '%s' "$table" | tr '[:lower:]' '[:upper:]')
     src="${VOCAB_DIR}/${table##*.}.csv" # table minus the "vocab."
+    if ! [ -f "$src" ]; then
+      src="${VOCAB_DIR}/${capital_table##*.}.csv" # TABLE minus the "vocab."
+    fi
     log "loading local ${src} into ${table}"
     psql_cmd -c "\copy ${table} FROM '${src}' WITH DELIMITER E'\t' CSV HEADER QUOTE E'\b'"
     kill -s SIGUSR1 $$  # increment i in the parent
