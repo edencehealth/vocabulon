@@ -1,4 +1,6 @@
 #!/bin/sh
+# shellcheck disable=SC3049
+# bug report open: https://github.com/koalaman/shellcheck/issues/2715
 set -eu
 SELF=$(basename "$0" ".sh")
 VERSION="${GITHUB_TAG:-}/${COMMIT_SHA:-}"
