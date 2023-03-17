@@ -1,0 +1,31 @@
+name: Lint
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      # https://github.com/actions/checkout
+      - name: Checkout the code
+        uses: actions/checkout@v3
+
+      - name: yamllint
+        run: |
+          #!/bin/sh
+          docker run --rm --volume "$(pwd):/work" \
+            backplane/yamllint -f github . \
+
+      - name: shellcheck
+        run: |
+          #!/bin/sh
+          set -eux;
+          find . -type f -name '*.sh' -print0 | xargs -0 \
+            docker run \
+              --rm \
+              --volume "$(pwd):/work" \
+              --workdir /work \
+              koalaman/shellcheck:latest
