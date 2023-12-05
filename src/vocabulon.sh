@@ -11,8 +11,11 @@ export \
   PGPORT="${PGPORT:-5432}" \
   PGUSER="${PGUSER:-user}" \
   PGPASSWORD="${PGPASSWORD:-}" \
-  SCHEMA="${SCHEMA:-vocab}" \
-  SCHEMA_OWNER="${SCHEMA_OWNER:-}" \
+  CDM_SCHEMA="${CDM_SCHEMA:-omopcdm}" \
+  CDM_SCHEMA_OWNER="${CDM_SCHEMA_OWNER:-}" \
+  KEY_IDX="${KEY_IDX:-1}" \
+  RESULTS_SCHEMA="${RESULTS_SCHEMA:-results}" \
+  RESULTS_SCHEMA_OWNER="${RESULTS_SCHEMA_OWNER:-}" \
 ;
 
 # this has to come after the previous export
@@ -44,8 +47,21 @@ usage() {
     "--pguser PGUSER              username to use when authenticating to the server (default: $PGUSER)" \
     "--pgpassword PGPASSWORD      password to use when authenticating to the server (default: empty string)" \
     "--pgdatabase PGDATABASE      database name to access on the database server (default: $PGDATABASE)" \
-    "--schema SCHEMA              schema to place the vocab tables in (default: $SCHEMA)" \
-    "--schema-owner SCHEMA_OWNER  optional owner to apply to created schemas and tables (default: $SCHEMA_OWNER)" \
+    "" \
+    "--key-idx KEY_IDX            enable setting primary keys, foreign keys, indexes, and constraints" \
+    "                             (default: TRUE)" \
+    "" \
+    "--cdm-schema CDM_SCHEMA                      schema to place the vocab tables in" \
+    "                                             (default: $CDM_SCHEMA)" \
+    "--cdm-schema-owner CDM_SCHEMA_OWNER          optional owner to apply to created" \
+    "                                             schemas and tables" \
+    "                                             (default: $CDM_SCHEMA_OWNER)" \
+    "--results-schema RESULTS_SCHEMA              schema to place the vocab tables in" \
+    "                                             (default: $RESULTS_SCHEMA)" \
+    "--results-schema-owner RESULTS_SCHEMA_OWNER  optional owner to apply to created"\
+    "                                             schemas and tables"\
+    "                                             (default: $RESULTS_SCHEMA_OWNER)" \
+    "" \
     "--vocab-dir VOCAB_DIR        directory where vocab CSV files can be found (default: $VOCAB_DIR)" \
     "--scratch-dir SCRATCH_DIR    directory where scratch files can be written (default: $SCRATCH_DIR)" \
     "" # no trailing slash
@@ -65,6 +81,10 @@ die() {
 
 psql_cmd() {
   psql -v ON_ERROR_STOP=1 -q -At "$@"
+}
+
+parse_bool() {
+  printf '%s' "$*" | grep -qiE '(1|true|yes|y|enable)'
 }
 
 make_txn() {
@@ -125,14 +145,29 @@ main() {
         PGDATABASE="$1"
         ;;
 
-      --schema)
-        shift || die "--schema requires an argument"
-        SCHEMA="$1"
+      --cdm-schema)
+        shift || die "--cdm-schema requires an argument"
+        CDM_SCHEMA="$1"
         ;;
 
-      --schema-owner)
-        shift || die "--schema-owner requires an argument"
-        SCHEMA_OWNER="$1"
+      --cdm-schema-owner)
+        shift || die "--cdm-schema-owner requires an argument"
+        CDM_SCHEMA_OWNER="$1"
+        ;;
+
+      --key-idx)
+        shift || die "--key-idx requires an argument (boolean style)"
+        KEY_IDX=$(parse_bool "$1")
+        ;;
+
+      --results-schema)
+        shift || die "--results-schema requires an argument"
+        RESULTS_SCHEMA="$1"
+        ;;
+
+      --results-schema-owner)
+        shift || die "--results-schema-owner requires an argument"
+        RESULTS_SCHEMA_OWNER="$1"
         ;;
 
       --vocab-dir)
@@ -164,16 +199,19 @@ main() {
     PGUSER "$PGUSER" \
     PGPASSWORD "--REDACTED--" \
     PGDATABASE "$PGDATABASE" \
-    SCHEMA "$SCHEMA" \
-    SCHEMA_OWNER "$SCHEMA_OWNER" \
-    VOCAB_DIR "$VOCAB_DIR" \
+    CDM_SCHEMA "$CDM_SCHEMA" \
+    CDM_SCHEMA_OWNER "$CDM_SCHEMA_OWNER" \
+    RESULTS_SCHEMA "$RESULTS_SCHEMA" \
+    RESULTS_SCHEMA_OWNER "$RESULTS_SCHEMA_OWNER" \
     SCRATCH_DIR "$SCRATCH_DIR" \
+    VOCAB_DIR "$VOCAB_DIR" \
   >&2
 
   txn=$(make_txn)
   envsubst <"${SQL_DIR}/ddl.sql" >>"$txn"
-  if [ -n "$SCHEMA_OWNER" ]; then
-    log "including owner-setting commands ($SCHEMA_OWNER)"
+  if [ -n "$CDM_SCHEMA_OWNER" ] && [ -n "$RESULTS_SCHEMA_OWNER" ] ; then
+    log "including owner-setting commands " \
+      "(cdm: ${CDM_SCHEMA_OWNER}; results: ${RESULTS_SCHEMA_OWNER})"
     envsubst <"${SQL_DIR}/set_owner.sql" >>"$txn"
   fi
   envsubst <"${SQL_DIR}/get_empty_tables.sql" >>"$txn"
@@ -197,6 +235,25 @@ main() {
     done
   ) &
   wait || :
+
+  if [ -n "$ENABLE_KEY_IDX" ]; then
+    # set primary keys, foreign keys, indexes, and constraints
+    txn=$(make_txn)
+    log "adding primary keys to transaction"
+    envsubst <"${SQL_DIR}/pky.sql" >>"$txn"
+
+    log "adding foreign keys to transaction"
+    envsubst <"${SQL_DIR}/fky.sql" >>"$txn"
+
+    log "adding indexes & constraints to transaction"
+    envsubst <"${SQL_DIR}/idx.sql" >>"$txn"
+
+    log "sending transaction to apply keys, indexes, and constraints"
+    (
+      apply_txn "$txn"
+    ) &
+    wait || :
+  fi
 
   if [ "$load_count" = "0" ]; then
     log "no vocab tables are empty"
