@@ -208,6 +208,7 @@ main() {
   >&2
 
   txn=$(make_txn)
+  envsubst <"${SQL_DIR}/schemas.sql" >>"$txn"
   envsubst <"${SQL_DIR}/ddl.sql" >>"$txn"
   if [ -n "$CDM_SCHEMA_OWNER" ] && [ -n "$RESULTS_SCHEMA_OWNER" ] ; then
     log "including owner-setting commands " \
