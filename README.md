@@ -23,8 +23,21 @@ Usage: vocabulon [-h|--help] [options]
 --pguser PGUSER              username to use when authenticating to the server (default: user)
 --pgpassword PGPASSWORD      password to use when authenticating to the server (default: empty string)
 --pgdatabase PGDATABASE      database name to access on the database server (default: user)
---schema SCHEMA              schema to place the vocab tables in (default: vocab)
---schema-owner SCHEMA_OWNER  optional owner to apply to created schemas and tables (default: )
+
+--key-idx KEY_IDX            enable setting primary keys, foreign keys, indexes, and constraints
+                             (default: TRUE)
+
+--cdm-schema CDM_SCHEMA                      schema to place the vocab tables in
+                                             (default: omopcdm)
+--cdm-schema-owner CDM_SCHEMA_OWNER          optional owner to apply to created
+                                             schemas and tables
+                                             (default: )
+--results-schema RESULTS_SCHEMA              schema to place the vocab tables in
+                                             (default: results)
+--results-schema-owner RESULTS_SCHEMA_OWNER  optional owner to apply to created
+                                             schemas and tables
+                                             (default: )
+
 --vocab-dir VOCAB_DIR        directory where vocab CSV files can be found (default: /vocab)
 --scratch-dir SCRATCH_DIR    directory where scratch files can be written (default: /work)
 ```
