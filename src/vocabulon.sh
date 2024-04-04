@@ -13,9 +13,9 @@ export \
   PGPASSWORD="${PGPASSWORD:-}" \
   CDM_SCHEMA="${CDM_SCHEMA:-omopcdm}" \
   CDM_SCHEMA_OWNER="${CDM_SCHEMA_OWNER:-}" \
-  KEY_IDX="${KEY_IDX:-1}" \
   RESULTS_SCHEMA="${RESULTS_SCHEMA:-results}" \
   RESULTS_SCHEMA_OWNER="${RESULTS_SCHEMA_OWNER:-}" \
+  ENABLE_KIC="${ENABLE_KIC:-TRUE}" \
 ;
 
 # this has to come after the previous export
@@ -48,8 +48,8 @@ usage() {
     "--pgpassword PGPASSWORD      password to use when authenticating to the server (default: empty string)" \
     "--pgdatabase PGDATABASE      database name to access on the database server (default: $PGDATABASE)" \
     "" \
-    "--key-idx KEY_IDX            enable setting primary keys, foreign keys, indexes, and constraints" \
-    "                             (default: TRUE)" \
+    "--enable-kic ENABLE_KIC      enable setting keys, indexes, and constraints" \
+    "                             (default: $ENABLE_KIC)" \
     "" \
     "--cdm-schema CDM_SCHEMA                      schema to place the vocab tables in" \
     "                                             (default: $CDM_SCHEMA)" \
@@ -155,9 +155,9 @@ main() {
         CDM_SCHEMA_OWNER="$1"
         ;;
 
-      --key-idx)
-        shift || die "--key-idx requires an argument (boolean style)"
-        KEY_IDX=$(parse_bool "$1")
+      --enable-kic)
+        shift || die "--enable-kic requires an argument (boolean style)"
+        ENABLE_KIC="$1"
         ;;
 
       --results-schema)
@@ -194,13 +194,14 @@ main() {
 
   log "$VERSION starting as $(id) in $(pwd); running config:"
   printf '  %s="%s"\n' \
-    PGHOST "$PGHOST" \
-    PGPORT "$PGPORT" \
-    PGUSER "$PGUSER" \
-    PGPASSWORD "--REDACTED--" \
-    PGDATABASE "$PGDATABASE" \
     CDM_SCHEMA "$CDM_SCHEMA" \
     CDM_SCHEMA_OWNER "$CDM_SCHEMA_OWNER" \
+    ENABLE_KIC "$ENABLE_KIC" \
+    PGDATABASE "$PGDATABASE" \
+    PGHOST "$PGHOST" \
+    PGPASSWORD "--REDACTED--" \
+    PGPORT "$PGPORT" \
+    PGUSER "$PGUSER" \
     RESULTS_SCHEMA "$RESULTS_SCHEMA" \
     RESULTS_SCHEMA_OWNER "$RESULTS_SCHEMA_OWNER" \
     SCRATCH_DIR "$SCRATCH_DIR" \
@@ -225,10 +226,15 @@ main() {
   (
     apply_txn "$txn" | while read -r table; do
       # the transaction returns a list of empty tables that need vocab data
-      capital_table=$(printf '%s' "$table" | tr '[:lower:]' '[:upper:]')
       src="${VOCAB_DIR}/${table##*.}.csv" # table minus the "vocab."
       if ! [ -f "$src" ]; then
+        # table.csv doesn't exist, let's try TABLE.csv
+        capital_table=$(printf '%s' "$table" | tr '[:lower:]' '[:upper:]')
         src="${VOCAB_DIR}/${capital_table##*.}.csv" # TABLE minus the "vocab."
+      fi
+      if ! [ -f "$src" ]; then
+        log "WARNING: no input file found for table ${table}"
+        continue
       fi
       log "loading local ${src} into ${table}"
       psql_cmd -c "\copy ${table} FROM '${src}' WITH DELIMITER E'\t' CSV HEADER QUOTE E'\b'"
@@ -237,7 +243,7 @@ main() {
   ) &
   wait || :
 
-  if [ -n "$ENABLE_KEY_IDX" ]; then
+  if parse_bool "$ENABLE_KIC"; then
     # set primary keys, foreign keys, indexes, and constraints
     txn=$(make_txn)
     log "adding primary keys to transaction"
@@ -250,9 +256,7 @@ main() {
     envsubst <"${SQL_DIR}/idx.sql" >>"$txn"
 
     log "sending transaction to apply keys, indexes, and constraints"
-    (
-      apply_txn "$txn"
-    ) &
+    ( apply_txn "$txn" ) &
     wait || :
   fi
 
